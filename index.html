@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Subject 13</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.6;
+const key = new THREE.DirectionalLight(0xffffff, 2.2);
+key.position.set(2, 4, 3);
+scene.add(key);
+
+const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.05, 100);
+
+// Same binding as the game's CharacterMaterials: material "subject13_<key>"
+// -> textures/<key>_albedo.(png|jpg), <key>_normal.png, <key>_orm.jpg.
+// PNG albedo = alpha cutout. ORM: R occlusion, G roughness, B subsurface mask (not metalness).
+const PNG_ALBEDO = new Set(['brows', 'lashes', 'coat_skirt', 'eyes', 'suit']);
+const TWO_SIDED = new Set(['brows', 'lashes', 'coat_skirt', 'suit']);
+const texLoader = new THREE.TextureLoader();
+const tex = (file, srgb) => {
+  const t = texLoader.load('model/textures/' + file);
+  t.flipY = false;
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+};
+const cache = {};
+function materialFor(k) {
+  if (cache[k]) return cache[k];
+  const alpha = PNG_ALBEDO.has(k);
+  const orm = tex(k + '_orm.jpg', false);
+  return cache[k] = new THREE.MeshStandardMaterial({
+    map: tex(`${k}_albedo.${alpha ? 'png' : 'jpg'}`, true),
+    normalMap: tex(k + '_normal.png', false),
+    aoMap: orm, roughnessMap: orm, roughness: 1, metalness: 0,
+    alphaTest: alpha ? 0.5 : 0,
+    side: TWO_SIDED.has(k) || alpha ? THREE.DoubleSide : THREE.FrontSide,
+  });
+}
+
+let target = new THREE.Vector3(), radius = 4, height = 1.5;
+new GLTFLoader().load('model/subject13.glb', (gltf) => {
+  const model = gltf.scene;
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    const k = (o.material.name || '').replace(/^subject13_/, '');
+    if (k === 'shadow') { o.visible = false; return; }  // shadow-only proxy
+    o.material = materialFor(k);
+    o.frustumCulled = false;
+  });
+  scene.add(model);
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  box.getCenter(target);
+  height = target.y;
+  radius = Math.max(size.y, size.x) * 2.3;
+});
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const a = clock.getElapsedTime() * 0.2;  // ~31 s per full circle
+  camera.position.set(target.x + Math.sin(a) * radius, height, target.z + Math.cos(a) * radius);
+  camera.lookAt(target);
+  renderer.render(scene, camera);
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
