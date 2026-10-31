@@ -20,6 +20,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -36,6 +37,12 @@ key.position.set(2, 4, 3);
 scene.add(key);
 
 const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.05, 100);
+// Drag (mouse or one finger) to orbit, wheel or pinch to zoom; idles into a slow circle.
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.enablePan = false;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 2;  // ~30 s per full circle
 
 // Same binding as the game's CharacterMaterials: material "subject13_<key>"
 // -> textures/<key>_albedo.(png|jpg), <key>_normal.png, <key>_orm.jpg.
@@ -64,7 +71,7 @@ function materialFor(k) {
   });
 }
 
-let target = new THREE.Vector3(), radius = 4, height = 1.5;
+let modelCenter = new THREE.Vector3();
 new GLTFLoader().load('model/subject13.glb', (gltf) => {
   const model = gltf.scene;
   model.traverse((o) => {
@@ -77,16 +84,17 @@ new GLTFLoader().load('model/subject13.glb', (gltf) => {
   scene.add(model);
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
-  box.getCenter(target);
-  height = target.y;
-  radius = Math.max(size.y, size.x) * 2.3;
+  box.getCenter(modelCenter);
+  const radius = Math.max(size.y, size.x / Math.min(camera.aspect, 1)) * 2.3;  // fit arms on tall phones
+  controls.target.copy(modelCenter);
+  camera.position.set(modelCenter.x, modelCenter.y, modelCenter.z + radius);
+  controls.minDistance = size.y * 0.3;
+  controls.maxDistance = radius * 2;
+  controls.update();
 });
 
-const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
-  const a = clock.getElapsedTime() * 0.2;  // ~31 s per full circle
-  camera.position.set(target.x + Math.sin(a) * radius, height, target.z + Math.cos(a) * radius);
-  camera.lookAt(target);
+  controls.update();
   renderer.render(scene, camera);
 });
 
